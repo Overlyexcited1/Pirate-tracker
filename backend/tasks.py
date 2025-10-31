@@ -1,8 +1,10 @@
+# backend/tasks.py
 from contextlib import contextmanager
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Organization
-from services.starapi import fetch_user_org, fetch_org_info
+# OLD: from services.starapi import fetch_user_org, fetch_org_info
+from .starapi import fetch_user_org, fetch_org_info  # <- fix
 
 @contextmanager
 def session_scope():

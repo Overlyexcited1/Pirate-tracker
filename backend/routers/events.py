@@ -1,12 +1,11 @@
 # backend/routers/events.py
-
-from fastapi import APIRouter, Depends, HTTPException, Path, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Path
 from sqlalchemy.orm import Session
-from database import Base, engine, get_db
+from database import get_db
 from models import Event
 from schemas import EventCreate, EventOut
-from deps import require_client_api_key, require_admin_api_key
-import crud
+# OLD: from tasks import enrich_attacker_org
+from ..tasks import enrich_attacker_org 
 
 # starcitizen-api.com enrichment
 from tasks import enrich_attacker_org
