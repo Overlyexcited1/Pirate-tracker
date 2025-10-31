@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import Player
-from schemas import PirateProfile
+from backend.schemas import PirateProfile
 router = APIRouter(tags=['players'])
 
 @router.get('/pirates/by-name', response_model=PirateProfile)

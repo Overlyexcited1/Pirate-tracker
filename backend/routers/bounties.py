@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import Player
-from schemas import PirateProfile
+from backend.schemas import PirateProfile
 from services_ranking import recompute_scores
 
 router = APIRouter(tags=["bounties"])
