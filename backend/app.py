@@ -1,5 +1,6 @@
 # backend/app.py
 from fastapi import FastAPI
+from backend.database import Base, engine
 from backend.routers import events, bounties, players, roster, heatmap
 
 app = FastAPI(title="Pirate Bounty Tracker API", version="2.0")
