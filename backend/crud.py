@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
-from models import Player, Event
+from backend.models import Player, Event
+from backend.database import SessionLocal
 from typing import Optional
 from datetime import datetime
 
