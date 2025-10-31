@@ -4,20 +4,20 @@ from backend.database import SessionLocal
 from typing import Optional
 from datetime import datetime
 
-def get_or_create_player(db: Session, player_id: Optional[int], name: str, org: Optional[str]=None) -> Player:
-    obj = None
-    if player_id is not None:
-        obj = db.query(Player).filter(Player.player_id == player_id).first()
-    if obj is None:
-        obj = db.query(Player).filter(Player.name == name).first()
-    if obj is None:
-        obj = Player(player_id=player_id if player_id is not None else None, name=name, org=org)
-        db.add(obj)
-        db.flush()
-    if org:
-        obj.org = org
-    obj.last_seen = datetime.utcnow()
-    return obj
+def get_player_by_handle(db: Session, handle: str) -> Player | None:
+    return db.query(Player).filter(Player.handle == handle).first()
+
+def create_player(db: Session, handle: str) -> Player:
+    p = Player(handle=handle)
+    db.add(p)
+    db.flush()
+    return p
+
+def get_or_create_player(db: Session, handle: str) -> Player:
+    p = get_player_by_handle(db, handle)
+    if p:
+        return p
+    return create_player(db, handle)
 
 def create_event(db: Session, data) -> Event:
     ev = Event(

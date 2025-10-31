@@ -6,11 +6,11 @@ from backend.routers import events, bounties, players, roster, heatmap
 app = FastAPI(title="Pirate Bounty Tracker API", version="2.0")
 
 # include routers
-app.include_router(events.router)
-app.include_router(bounties.router)
-app.include_router(players.router)
-app.include_router(roster.router)
-app.include_router(heatmap.router)
+app.include_router(events.router,   prefix="/api/v1")
+app.include_router(bounties.router, prefix="/api/v1")
+app.include_router(players.router,  prefix="/api/v1")
+app.include_router(roster.router,   prefix="/api/v1")
+app.include_router(heatmap.router,  prefix="/api/v1")
 
 # (optional) simple healthcheck
 @app.get("/healthz")
