@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Organization
 # OLD: from services.starapi import fetch_user_org, fetch_org_info
-from starapi import fetch_user_org, fetch_org_info
+from .services.starapi import fetch_user_org, fetch_org_info
 
 @contextmanager
 def session_scope():
