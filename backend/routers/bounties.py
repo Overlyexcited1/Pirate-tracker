@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import Player
 from backend.schemas import PirateProfile
-from services_ranking import recompute_scores
+from backend.services_ranking import recompute_scores
 
 router = APIRouter(tags=["bounties"])
 
