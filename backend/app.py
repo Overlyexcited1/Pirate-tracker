@@ -2,6 +2,16 @@
 from fastapi import FastAPI
 from backend.database import Base, engine
 from backend.routers import events, bounties, players, roster, heatmap
+from backend import models  # noqa: F401  # DO NOT REMOVE
+
+# Use lifespan to run create_all once when the app boots
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # create tables on cold start
+    Base.metadata.create_all(bind=engine)
+    yield
 
 app = FastAPI(title="Pirate Bounty Tracker API", version="2.0")
 
