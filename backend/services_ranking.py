@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import Player
+from backend.models import Player
 from datetime import datetime
 def decay_factor(days_since_last: float) -> float:
     return 0.05 * days_since_last
