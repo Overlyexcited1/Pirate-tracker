@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from database import get_db
-from models import Player
+from backend.database import get_db
+from backend.models import Player
 import os
 from dotenv import load_dotenv
 load_dotenv()

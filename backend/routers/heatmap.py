@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from database import get_db
-from models import Event
+from backend.database import get_db
+from backend.models import Event
 from math import sqrt
 from collections import Counter
 router = APIRouter(tags=['heatmap'])
