@@ -9,7 +9,7 @@ from deps import require_client_api_key, require_admin_api_key
 import crud
 
 # import the org enrichment background task
-from tasks import enrich_attacker_org
+from backend.tasks import enrich_attacker_org
 
 router = APIRouter(tags=["events"])
 

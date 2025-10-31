@@ -1,18 +1,28 @@
-from database import Base, engine
+# backend/app.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-# create tables once on boot
-Base.metadata.create_all(bind=engine)
-
-from routers import events, bounties, players, roster, heatmap
+# Import routers as a package
+from backend.routers import events, bounties, players, roster, heatmap
 
 app = FastAPI(title="Pirate Bounty Tracker API", version="2.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.include_router(events.router, prefix="/api/v1")
-app.include_router(bounties.router, prefix="/api/v1")
-app.include_router(players.router, prefix="/api/v1")
-app.include_router(roster.router, prefix="/api/v1")
-app.include_router(heatmap.router, prefix="/api/v1")
 
-@app.get("/health")
-def health():
+# CORS (adjust origins later if you want)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount routers
+app.include_router(events.router)
+app.include_router(bounties.router)
+app.include_router(players.router)
+app.include_router(roster.router)
+app.include_router(heatmap.router)
+
+@app.get("/healthz")
+def healthz():
     return {"ok": True}
