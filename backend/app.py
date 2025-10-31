@@ -1,5 +1,8 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from database import Base, engine
+
+# create tables once on boot
+Base.metadata.create_all(bind=engine)
+
 from routers import events, bounties, players, roster, heatmap
 
 app = FastAPI(title="Pirate Bounty Tracker API", version="2.0")
