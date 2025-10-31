@@ -5,7 +5,7 @@ from database import get_db
 from models import Event
 from schemas import EventCreate, EventOut
 # OLD: from tasks import enrich_attacker_org
-from ..tasks import enrich_attacker_org 
+from tasks import enrich_attacker_org
 
 # starcitizen-api.com enrichment
 from tasks import enrich_attacker_org
