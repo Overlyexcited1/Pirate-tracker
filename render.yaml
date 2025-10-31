@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: pirate-bounty-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pirate-bounty-db
+          property: connectionString
+      - key: CLIENT_API_KEY
+        sync: false
+      - key: ADMIN_API_KEY
+        sync: false
+
+databases:
+  - name: pirate-bounty-db

@@ -1,0 +1,1 @@
+<2949-09-23 21:23:24.123> [Notice] <Actor Death> CActor::Kill: 'MemberOne' [12345] in zone 'Stanton' killed by BadPirate (Harassers) [98765] using 'Size5Laser' with damage type 'VehicleDestruction' x: 123.4, y: 567.8, z: -910.11
