@@ -22,6 +22,8 @@ def get_or_create_player(db: Session, name: str) -> Player:
 
 # --- Events ---
 
+# --- Events ---
+
 def create_event(db: Session, payload: EventCreate) -> Event:
     ev = Event(
         timestamp=payload.timestamp,
@@ -31,7 +33,8 @@ def create_event(db: Session, payload: EventCreate) -> Event:
         z=payload.coords.z,
         weapon=payload.weapon,
         damage_type=payload.damage_type,
-        value_destroyed=payload.ship_value_estimate,
+        # CHANGE: use the actual column name on Event
+        ship_value_estimate=payload.ship_value_estimate,
         source_line=payload.source_line,
         confirmed=False,
     )
@@ -40,10 +43,10 @@ def create_event(db: Session, payload: EventCreate) -> Event:
     return ev
 
 def update_player_stats(db: Session, attacker: Player, victim: Player, ev: Event) -> None:
-    # adjust to your actual columns
     attacker.total_kills = (attacker.total_kills or 0) + 1
     attacker.total_attacks = (attacker.total_attacks or 0) + 1
-    attacker.value_destroyed = (attacker.value_destroyed or 0) + (ev.value_destroyed or 0)
+    # CHANGE: pull from the event's real field name
+    attacker.value_destroyed = (attacker.value_destroyed or 0) + (getattr(ev, "ship_value_estimate", 0) or 0)
 
     victim.total_attacks = (victim.total_attacks or 0) + 1
 
