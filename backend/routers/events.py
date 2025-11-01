@@ -15,26 +15,51 @@ except Exception:
 
 router = APIRouter(tags=["events"])
 
-@router.post("/events", response_model=EventOut, dependencies=[Depends(require_client_api_key)])
-def post_event(payload: EventCreate, db: Session = Depends(get_db), bg: BackgroundTasks | None = None):
-    # ensure Players exist (by name) and wire FKs
+@router.post(
+    "/events",
+    response_model=EventOut,
+    dependencies=[Depends(require_client_api_key)],
+)
+def post_event(
+    payload: EventCreate,
+    background_tasks: BackgroundTasks,          # non-default first
+    db: Session = Depends(get_db),              # default (Depends) after
+):
     attacker = crud.get_or_create_player_by_name(db, payload.attacker_name)
     victim   = crud.get_or_create_player_by_name(db, payload.victim_name)
 
-    ev = crud.create_event(db, payload)
-    ev.attacker_id = attacker.player_id
-    ev.victim_id   = victim.player_id
+    ev = Event(
+        timestamp=payload.timestamp,
+        attacker_id=attacker.player_id if attacker else None,
+        victim_id=victim.player_id if victim else None,
+        attacker_name=payload.attacker_name,
+        attacker_org=payload.attacker_org,
+        victim_name=payload.victim_name,
+        zone=payload.zone,
+        x=(payload.coords.x if payload.coords else None),
+        y=(payload.coords.y if payload.coords else None),
+        z=(payload.coords.z if payload.coords else None),
+        weapon=payload.weapon,
+        damage_type=payload.damage_type,
+        ship_value_estimate=payload.ship_value_estimate or 0.0,
+        raw_line=payload.source_line,
+        confirmed=True,
+    )
     db.add(ev)
     db.commit()
+    db.refresh(ev)
 
-    crud.update_player_stats(db, attacker, victim, ev)
-    db.commit()
+    try:
+        crud.update_player_stats(db, attacker, victim, ev)
+        db.commit()
+    except Exception:
+        db.rollback()
 
-    # optional enrichment if org missing
-    if bg and not payload.attacker_org:
-        bg.add_task(enrich_attacker_org, payload.attacker_name, None)
+    if not payload.attacker_org and payload.attacker_name:
+        background_tasks.add_task(enrich_attacker_org, payload.attacker_name, None)
 
     return ev
+
 
 @router.post("/events/{event_id}/confirm", response_model=EventOut, dependencies=[Depends(require_admin_api_key)])
 def confirm_event(event_id: int = Path(...), db: Session = Depends(get_db)):
