@@ -1,9 +1,10 @@
-# bot.py — Bulwark Pirate Tracker (async HTTP, safe JSON, full commands, safe resync)
+# bot.py — Bulwark Pirate Tracker (async HTTP, full command set incl. /postevent)
 
 import os
 import time
 import json
 import asyncio
+import datetime as dt
 from urllib.parse import quote_plus
 
 import aiohttp
@@ -14,11 +15,12 @@ from dotenv import load_dotenv
 
 # ---------- load env ----------
 load_dotenv()
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
-BACKEND_URL   = os.getenv("BACKEND_URL", "").rstrip("/")
-API_PREFIX    = os.getenv("API_PREFIX", "/api/v1").strip()
-GUILD_ID      = os.getenv("GUILD_ID")     # string
-OWNER_ID      = os.getenv("OWNER_ID")     # optional
+DISCORD_TOKEN  = os.getenv("DISCORD_TOKEN", "")
+BACKEND_URL    = os.getenv("BACKEND_URL", "").rstrip("/")
+API_PREFIX     = os.getenv("API_PREFIX", "/api/v1").strip()
+GUILD_ID       = os.getenv("GUILD_ID")     # string ok
+OWNER_ID       = os.getenv("OWNER_ID")     # optional
+CLIENT_API_KEY = os.getenv("CLIENT_API_KEY", "").strip()
 
 # auto-correct common typo
 if API_PREFIX.lower().rstrip("/") == "/api/vi":
@@ -31,28 +33,30 @@ API_PREFIX = API_PREFIX.rstrip("/")
 
 # ---------- discord setup ----------
 intents = discord.Intents.default()
-intents.message_content = True  # for admin text helpers if needed
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 session: aiohttp.ClientSession | None = None
 DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=20)
 
-# ---------- async http ----------
+# ---------- http helpers ----------
+def _full_url(path: str) -> str:
+    # path should be like "/events" or "events"
+    return f"{BACKEND_URL}{API_PREFIX}{path if path.startswith('/') else '/' + path}"
+
 async def http_get_json(path: str, timeout: aiohttp.ClientTimeout = DEFAULT_TIMEOUT):
-    """GET {BACKEND_URL}{API_PREFIX}{path} -> (json_or_text, err)"""
+    """GET -> (json_or_text, err)"""
     global session
     if not BACKEND_URL:
         return None, "Backend URL missing."
     if session is None or session.closed:
         session = aiohttp.ClientSession(timeout=timeout)
 
-    url = f"{BACKEND_URL}{API_PREFIX}{path if path.startswith('/') else '/' + path}"
+    url = _full_url(path)
     try:
         async with session.get(url) as resp:
-            if resp.status == 404:
-                return None, "404 Not Found"
             if resp.status >= 400:
-                return None, f"{resp.status}: {(await resp.text())[:200]}"
+                return None, f"{resp.status}: {(await resp.text())[:300]}"
             try:
                 return await resp.json(), None
             except aiohttp.ContentTypeError:
@@ -64,7 +68,37 @@ async def http_get_json(path: str, timeout: aiohttp.ClientTimeout = DEFAULT_TIME
     except Exception as e:
         return None, f"HTTP error: {e}"
 
-# ---------- safe formatters ----------
+async def http_post_json(path: str, payload: dict, use_client_key: bool = True,
+                         timeout: aiohttp.ClientTimeout = DEFAULT_TIMEOUT):
+    """POST JSON -> (json_or_text, err)"""
+    global session
+    if not BACKEND_URL:
+        return None, "Backend URL missing."
+    if session is None or session.closed:
+        session = aiohttp.ClientSession(timeout=timeout)
+
+    headers = {"Content-Type": "application/json"}
+    if use_client_key and CLIENT_API_KEY:
+        headers["x-client-api-key"] = CLIENT_API_KEY
+
+    url = _full_url(path)
+    try:
+        async with session.post(url, json=payload, headers=headers) as resp:
+            txt = await resp.text()
+            if resp.status >= 400:
+                return None, f"{resp.status}: {txt[:300]}"
+            try:
+                return await resp.json(), None
+            except aiohttp.ContentTypeError:
+                return txt, None
+    except asyncio.TimeoutError:
+        return None, "Backend timed out."
+    except aiohttp.ClientConnectionError:
+        return None, "Cannot reach backend."
+    except Exception as e:
+        return None, f"HTTP error: {e}"
+
+# ---------- formatting helpers ----------
 def _extract_rows(payload, key_candidates=("hotspots","bounties","roster","data","items")):
     if payload is None:
         return []
@@ -142,7 +176,7 @@ def fmt_roster(payload):
         lines.append(f"...and {len(rows)-20} more.")
     return "\n".join(lines)
 
-# ---------- lifecycle & sync ----------
+# ---------- lifecycle ----------
 @bot.event
 async def on_ready():
     global session
@@ -152,11 +186,11 @@ async def on_ready():
     try:
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
-            bot.tree.copy_global_to(guild=guild)       # ensure guild gets all globals
-            synced = await bot.tree.sync(guild=guild)  # instant
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
             print(f"Guild sync: {len(synced)} commands -> {[c.name for c in synced]}")
         else:
-            synced = await bot.tree.sync()             # global (may take minutes)
+            synced = await bot.tree.sync()
             print(f"Global sync: {len(synced)} commands")
     except Exception as e:
         print(f"⚠️ Sync failed: {e}")
@@ -166,15 +200,15 @@ async def on_close():
     if session and not session.closed:
         await session.close()
 
-# ---------- error hook ----------
+# ---------- global slash error hook ----------
 @bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: Exception):
+async def on_app_command_error(inter: discord.Interaction, error: Exception):
     msg = f"⚠️ Error: {error}"
     try:
-        if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
+        if inter.response.is_done():
+            await inter.followup.send(msg, ephemeral=True)
         else:
-            await interaction.response.send_message(msg, ephemeral=True)
+            await inter.response.send_message(msg, ephemeral=True)
     finally:
         print("Slash command error:", repr(error))
 
@@ -194,8 +228,8 @@ async def resync_cmd(inter: discord.Interaction):
             await inter.followup.send("Set GUILD_ID in .env to THIS server id, then restart the bot.")
             return
         guild = discord.Object(id=int(GUILD_ID))
-        bot.tree.clear_commands(guild=guild)      # purge guild cache
-        bot.tree.copy_global_to(guild=guild)      # repopulate from globals
+        bot.tree.clear_commands(guild=guild)
+        bot.tree.copy_global_to(guild=guild)
         synced = await bot.tree.sync(guild=guild)
         await inter.followup.send(f"Resynced **{len(synced)}** cmds: {', '.join(c.name for c in synced)}")
     except Exception as e:
@@ -213,7 +247,7 @@ async def debug_cmd(inter: discord.Interaction):
     )
     await inter.followup.send(msg)
 
-# ---------- small utility ----------
+# ---------- small utilities ----------
 @bot.tree.command(name="ping", description="Quick bot health check")
 async def ping_cmd(inter: discord.Interaction):
     await inter.response.send_message("pong ✅", ephemeral=True)
@@ -225,13 +259,14 @@ async def health_cmd(inter: discord.Interaction):
         global session
         if session is None or session.closed:
             session = aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT)
-        async with session.get(f"{BACKEND_URL}/health") as resp:
+        # Hit versioned health if your backend exposes it there; otherwise change to "/health"
+        async with session.get(_full_url("/health")) as resp:
             txt = await resp.text()
             await inter.followup.send(f"{resp.status}: {txt[:200]}")
     except Exception as e:
         await inter.followup.send(f"Health failed: {e}")
 
-# ---------- shared send ----------
+# ---------- generic GET helper ----------
 async def _send(inter: discord.Interaction, path: str, fmt_fn):
     await inter.response.defer(ephemeral=True)
     t0 = time.time()
@@ -245,7 +280,7 @@ async def _send(inter: discord.Interaction, path: str, fmt_fn):
         msg = f"⚠️ Format error: {e}"
     await inter.followup.send(f"{msg}\n_(query {time.time()-t0:.1f}s)_")
 
-# ---------- commands + aliases ----------
+# ---------- commands ----------
 @bot.tree.command(name="heatmap", description="Show piracy hotspots")
 async def heatmap_cmd(inter: discord.Interaction):
     await _send(inter, "/heatmap", fmt_hotspots)
@@ -275,26 +310,89 @@ async def org_cmd(inter: discord.Interaction):
 async def pirate_cmd(inter: discord.Interaction, name: str):
     await inter.response.defer(ephemeral=True)
     encoded = quote_plus(name)
-
-    # your backend uses query parameter (?name=), not path param
-    path = f"/pirates/by-name?name={encoded}"
-
-    data, err = await http_get_json(path)
+    data, err = await http_get_json(f"/pirates/by-name?name={encoded}")
     if err:
         await inter.followup.send(f"⚠️ {err}")
         return
-
     try:
         msg = fmt_pirate(data, name)
     except Exception as e:
         msg = f"⚠️ Could not render pirate payload: {e}"
-
     await inter.followup.send(msg)
 
 @bot.tree.command(name="pirateid", description="Lookup a pirate by player ID")
 @app_commands.describe(player_id="Numeric player ID")
 async def pirateid_cmd(inter: discord.Interaction, player_id: str):
     await _send(inter, f"/pirates/{player_id}", lambda d: fmt_pirate(d, player_id))
+
+# ---------- NEW: /postevent ----------
+@bot.tree.command(name="postevent", description="Record a new pirate attack event")
+@app_commands.describe(
+    attacker="Pirate/attacker name",
+    victim="Victim name",
+    zone="Nearest moon/planet (e.g., Daymar)",
+    x="X coord (float)",
+    y="Y coord (float)",
+    z="Z coord (float)",
+    attacker_org="Attacker org tag (optional)",
+    victim_org="Victim org tag (optional)",
+    timestamp_iso="ISO8601 (optional, default: now UTC)"
+)
+async def post_event(
+    inter: discord.Interaction,
+    attacker: str,
+    victim: str,
+    zone: str,
+    x: float,
+    y: float,
+    z: float,
+    attacker_org: str = "",
+    victim_org: str = "",
+    timestamp_iso: str = "",
+):
+    """Sends payload that matches EventCreate:
+       { attacker_name, victim_name, attacker_org?, victim_org?, zone, coords{x,y,z}, timestamp }
+    """
+    await inter.response.defer(ephemeral=True)
+
+    if not CLIENT_API_KEY:
+        await inter.followup.send("⚠️ Missing CLIENT_API_KEY in bot .env — cannot post.")
+        return
+
+    if not timestamp_iso:
+        timestamp_iso = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    payload = {
+        "attacker_name": attacker,
+        "victim_name": victim,
+        "attacker_org": attacker_org or None,
+        "victim_org": victim_org or None,
+        "zone": zone,
+        "coords": {"x": x, "y": y, "z": z},
+        "timestamp": timestamp_iso
+        # Optionals if your backend accepts them:
+        # "weapon": "CF-337 Panther",
+        # "damage_type": "Energy",
+        # "ship_value_estimate": 235000,
+        # "source_line": "Discord /postevent"
+    }
+
+    data, err = await http_post_json("/events", payload, use_client_key=True)
+    if err:
+        await inter.followup.send(f"⚠️ {err}")
+        return
+
+    # backend returns EventOut; try to show id if present
+    event_id = None
+    try:
+        event_id = (data or {}).get("event_id") or (data or {}).get("id")
+    except Exception:
+        pass
+
+    msg = f"✅ Event recorded: **{attacker}** attacked **{victim}** near **{zone}** @ ({x}, {y}, {z})"
+    if event_id:
+        msg += f" — id `{event_id}`"
+    await inter.followup.send(msg)
 
 # ---------- run ----------
 if __name__ == "__main__":
