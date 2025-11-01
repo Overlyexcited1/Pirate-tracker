@@ -1,3 +1,4 @@
+# backend/routers/events.py
 from fastapi import APIRouter, Depends, HTTPException, Path, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -18,54 +19,25 @@ router = APIRouter(tags=["events"])
 
 @router.post("/events", response_model=EventOut, dependencies=[Depends(require_client_api_key)])
 def post_event(payload: EventCreate, db: Session = Depends(get_db), bg: BackgroundTasks = None):
-    try:
-        # 1) Upsert players (DO NOT pass org kwarg)
-        attacker = crud.get_or_create_player(db, payload.attacker_id, payload.attacker_name)
-        victim   = crud.get_or_create_player(db, payload.victim_id,   payload.victim_name)
+    # NOTE: use name-only calls (no player_id) so callers don't need to know numeric IDs
+    attacker = crud.get_or_create_player(db, payload.attacker_name)
+    victim = crud.get_or_create_player(db, payload.victim_name)
 
-        # If your Player model has an 'org' column and you want to save it:
-        if getattr(attacker, "org", None) is not None and payload.attacker_org:
-            attacker.org = payload.attacker_org  # simple assign on model
-            db.add(attacker)
+    # create_event should accept the payload structure and produce an Event instance
+    ev = crud.create_event(db, payload)
 
-        db.flush()  # ensure IDs exist
+    # attach the Player objects to the Event and update stats
+    ev.attacker = attacker
+    ev.victim = victim
+    db.commit()
+    crud.update_player_stats(db, attacker, victim, ev)
+    db.commit()
 
-        # 2) Build Event with FK IDs set up-front
-        ev = Event(
-            timestamp=payload.timestamp,
-            zone=payload.zone,
-            x=payload.coords.x,
-            y=payload.coords.y,
-            z=payload.coords.z,
-            weapon=payload.weapon,
-            damage_type=payload.damage_type,           # must match your Enum
-            ship_value_estimate=payload.ship_value_estimate,
-            source_line=payload.source_line,
-            attacker_id=attacker.player_id,
-            victim_id=victim.player_id,
-            attacker_org=payload.attacker_org or None  # nullable is fine
-        )
-        db.add(ev)
-        db.flush()
+    # if you want enrichment when org is missing, keep this guarded
+    if bg and not payload.attacker_org:
+        bg.add_task(enrich_attacker_org, payload.attacker_name, None)
 
-        # 3) Update stats
-        crud.update_player_stats(db, attacker, victim, ev)
-
-        db.commit()
-        db.refresh(ev)
-
-        # 4) Optional enrichment if org not provided
-        if bg and not payload.attacker_org:
-            bg.add_task(enrich_attacker_org, payload.attacker_name, None)
-
-        return ev
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-
+    return ev
 
 @router.post("/events/{event_id}/confirm", response_model=EventOut, dependencies=[Depends(require_admin_api_key)])
 def confirm_event(event_id: int = Path(...), db: Session = Depends(get_db)):
