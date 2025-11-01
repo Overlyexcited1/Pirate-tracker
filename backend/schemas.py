@@ -1,7 +1,8 @@
-from pydantic import BaseModel
+# backend/schemas.py
+from pydantic import BaseModel, Field
 from typing import Optional
 
-class Coords(BaseModel):
+class Coord3D(BaseModel):
     x: float
     y: float
     z: float
@@ -14,20 +15,20 @@ class EventCreate(BaseModel):
     victim_name: str
     victim_id: Optional[int] = None
     zone: str
-    coords: Coords
+    coords: Coord3D
     weapon: Optional[str] = None
     damage_type: str
-    ship_value_estimate: Optional[float] = 0.0
-    source_line: str
+    ship_value_estimate: float = 0.0
+    source_line: Optional[str] = Field(default=None)   # maps to Event.raw_line
 
 class EventOut(BaseModel):
     event_id: int
     timestamp: str
-    attacker_name: str
     attacker_id: Optional[int]
+    victim_id: Optional[int]
+    attacker_name: str
     attacker_org: Optional[str]
     victim_name: str
-    victim_id: Optional[int]
     zone: str
     x: Optional[float]
     y: Optional[float]
@@ -35,9 +36,12 @@ class EventOut(BaseModel):
     weapon: Optional[str]
     damage_type: str
     ship_value_estimate: float
+    raw_line: Optional[str]
     confirmed: bool
+
     class Config:
         from_attributes = True
+
 
 class PirateProfile(BaseModel):
     player_id: int
