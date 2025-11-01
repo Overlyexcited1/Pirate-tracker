@@ -1,57 +1,51 @@
+# backend/crud.py
 from sqlalchemy.orm import Session
 from backend.models import Player, Event
-from backend.database import SessionLocal
-from typing import Optional
-from datetime import datetime
+from backend.schemas import EventCreate
 
-def get_player_by_handle(db: Session, handle: str) -> Player | None:
-    return db.query(Player).filter(Player.handle == handle).first()
+# --- Players ---
 
-def create_player(db: Session, handle: str) -> Player:
-    p = Player(handle=handle)
+def get_player_by_name(db: Session, name: str) -> Player | None:
+    return db.query(Player).filter(Player.name == name).first()
+
+def create_player(db: Session, name: str) -> Player:
+    p = Player(name=name)
     db.add(p)
-    db.flush()
+    db.flush()          # populate p.player_id without full commit
     return p
 
-def get_or_create_player(db: Session, handle: str) -> Player:
-    p = get_player_by_handle(db, handle)
+def get_or_create_player(db: Session, name: str) -> Player:
+    p = get_player_by_name(db, name)
     if p:
         return p
-    return create_player(db, handle)
+    return create_player(db, name)
 
-def create_event(db: Session, data) -> Event:
+# --- Events ---
+
+def create_event(db: Session, payload: EventCreate) -> Event:
     ev = Event(
-        timestamp=data.timestamp,
-        attacker_id=data.attacker_id,
-        attacker_name=data.attacker_name,
-        attacker_org=data.attacker_org,
-        victim_id=data.victim_id,
-        victim_name=data.victim_name,
-        zone=data.zone,
-        x=data.coords.x,
-        y=data.coords.y,
-        z=data.coords.z,
-        weapon=data.weapon,
-        damage_type=data.damage_type,
-        ship_value_estimate=data.ship_value_estimate or 0.0,
-        raw_line=data.source_line,
-        confirmed=True,
+        timestamp=payload.timestamp,
+        zone=payload.zone,
+        x=payload.coords.x,
+        y=payload.coords.y,
+        z=payload.coords.z,
+        weapon=payload.weapon,
+        damage_type=payload.damage_type,
+        value_destroyed=payload.ship_value_estimate,
+        source_line=payload.source_line,
+        confirmed=False,
     )
     db.add(ev)
     db.flush()
     return ev
 
-def update_player_stats(db: Session, attacker: Player, victim: Player, ev: Event):
-    is_kill = ("death" in (ev.damage_type or "").lower()) or ("destruction" in (ev.damage_type or "").lower())
-    attacker.total_attacks += 1
-    if is_kill:
-        attacker.total_kills += 1
-    attacker.value_destroyed += ev.ship_value_estimate or 0.0
-    db.add(attacker)
-    if victim:
-        db.add(victim)
+def update_player_stats(db: Session, attacker: Player, victim: Player, ev: Event) -> None:
+    # adjust to your actual columns
+    attacker.total_kills = (attacker.total_kills or 0) + 1
+    attacker.total_attacks = (attacker.total_attacks or 0) + 1
+    attacker.value_destroyed = (attacker.value_destroyed or 0) + (ev.value_destroyed or 0)
 
-def confirm_event(db: Session, ev: Event, confirmed: bool):
-    ev.confirmed = confirmed
-    db.add(ev)
-    return ev
+    victim.total_attacks = (victim.total_attacks or 0) + 1
+
+    db.add(attacker)
+    db.add(victim)
