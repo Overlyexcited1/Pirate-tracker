@@ -18,20 +18,53 @@ router = APIRouter(tags=["events"])
 
 @router.post("/events", response_model=EventOut, dependencies=[Depends(require_client_api_key)])
 def post_event(payload: EventCreate, db: Session = Depends(get_db), bg: BackgroundTasks = None):
-    attacker = crud.get_or_create_player(db, payload.attacker_id, payload.attacker_name, org=payload.attacker_org)
-    victim = crud.get_or_create_player(db, payload.victim_id, payload.victim_name)
-    ev = crud.create_event(db, payload)
-    ev.attacker = attacker
-    ev.victim = victim
-    db.commit()
-    crud.update_player_stats(db, attacker, victim, ev)
-    db.commit()
+    try:
+        # 1) Upsert players first
+        attacker = crud.get_or_create_player(
+            db, payload.attacker_id, payload.attacker_name, org=payload.attacker_org or None
+        )
+        victim = crud.get_or_create_player(
+            db, payload.victim_id, payload.victim_name
+        )
+        db.flush()  # ensure attacker.player_id / victim.player_id exist
 
-    # if you want enrichment when org is missing, keep this guarded
-    if bg and not payload.attacker_org:
-        bg.add_task(enrich_attacker_org, payload.attacker_name, None)
+        # 2) Create the event with FK columns set up-front (no relationship-first insert)
+        ev = Event(
+            timestamp=payload.timestamp,
+            zone=payload.zone,
+            x=payload.coords.x,
+            y=payload.coords.y,
+            z=payload.coords.z,
+            weapon=payload.weapon,
+            damage_type=payload.damage_type,          # must match your Enum exactly
+            ship_value_estimate=payload.ship_value_estimate,
+            source_line=payload.source_line,
+            attacker_id=attacker.player_id,
+            victim_id=victim.player_id,
+            attacker_org=payload.attacker_org or None
+        )
+        db.add(ev)
+        db.flush()   # get ev.event_id without committing yet
 
-    return ev
+        # 3) Update player stats (this likely reads ev fields)
+        crud.update_player_stats(db, attacker, victim, ev)
+
+        db.commit()
+        db.refresh(ev)
+
+        # 4) Optional background enrichment if no org passed
+        if bg and not payload.attacker_org:
+            bg.add_task(enrich_attacker_org, payload.attacker_name, None)
+
+        return ev
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        # Surface the root cause instead of a generic 500
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("/events/{event_id}/confirm", response_model=EventOut, dependencies=[Depends(require_admin_api_key)])
 def confirm_event(event_id: int = Path(...), db: Session = Depends(get_db)):
